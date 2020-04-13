@@ -1,0 +1,18 @@
+---
+ansible_connection: vmware_tools
+
+ansible_vmware_host: xstream-csp-vcenter.csp.vec.drhm01.fabshop.io
+ansible_vmware_user: vsfl\amareshp
+ansible_vmware_password: Password1
+ansible_vmware_validate_certs: no  # default is yes
+
+# vCenter Connection VM Path Example
+ansible_vmware_guest_path: xstream-csp/vm/ocp4/{{ inventory_hostname }}
+# ESXi Connection VM Path Example
+#ansible_vmware_guest_path: xstream-csp/CSP_PROJECTS/ansible/winsqlserver
+
+ansible_vmware_tools_user: administrator
+ansible_vmware_tools_password: Password1
+
+# if the target VM guest is Windows set the 'ansible_shell_type' to 'powershell'
+ansible_shell_type: powershell

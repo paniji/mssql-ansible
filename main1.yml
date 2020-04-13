@@ -1,0 +1,155 @@
+- name: Install MS SQL
+  hosts: windows
+  tasks:
+# Setup service accounts
+   - name: Active Directory | Ensure SQL Service account is present
+     win_user:
+      name: "{{ mssql_sqlsvc_account | regex_search('[^\\\\]*$') }}"
+      firstname: "{{ mssql_instance_name }}"
+      surname: SQLSvc
+      password: "{{ mssql_sqlsvc_account_pass }}"
+      password_never_expires: yes
+      user_cannot_change_password: yes
+      description: "SQL Service account for {{ inventory_hostname }}\\{{ mssql_instance_name }}"
+      state: present
+     tags: service_account
+
+   - name: Active Directory | Ensure SQL Agent Service account is present
+     win_user:
+      name: "{{ mssql_agentsvc_account | regex_search('[^\\\\]*$') }}"
+      firstname: "{{ mssql_instance_name }}"
+      surname: AgentSvc
+      password: "{{ mssql_agentsvc_account_pass }}"
+      password_never_expires: yes
+      user_cannot_change_password: yes
+      description: "SQL Agent service account for {{ inventory_hostname }}\\{{ mssql_instance_name }}"
+      state: present
+     tags: service_account
+
+   - name: ensure DL dir is present
+     win_file:
+      path: "{{ item }}"
+      state: directory
+     loop:
+      - "{{ mssql_temp_download_path }}"
+      - "{{ mssql_installation_path }}"
+   - name: Fetch SQL Media Downloader
+     win_get_url:
+      url: "{{ mssql_installation_source }}"
+      dest: "{{ mssql_temp_download_path }}\\SQLServer2017-SSEI-Dev.exe"
+
+   - name: Use Media Downloader to fetch SQL Installation CABs to {{ mssql_installation_path }}
+     win_shell: "{{ mssql_temp_download_path }}\\SQLServer2017-SSEI-Dev.exe /Action=Download /MediaPath={{ mssql_installation_path }} /MediaType=CAB /Quiet"
+
+# Job will fail if extracted media folder is not empty, quick step to ensure it's empty
+   - name: Ensure installation media extraction path is empty
+     win_file:
+      path: "{{ mssql_installation_path }}\\Media"
+      state: absent
+
+   - name: Extract installation media
+     win_shell: "{{ mssql_installation_path }}\\SQLServer2017-DEV-x64-ENU.exe /X:{{ mssql_installation_path }}\\Media /Q"  
+   
+   - name: Install SQL Server
+     win_dsc:
+      resource_name: SQLSetup
+      Action: Install
+      UpdateEnabled: True
+      SourcePath: "{{ mssql_installation_path }}\\Media"
+      InstanceName: "{{ mssql_instance_name }}"
+      InstallSharedDir: "{{ mssql_installshared_path }}"
+      InstallSharedwowDir: "{{ mssql_installsharedwow_path }}"
+      InstanceDir: "{{ mssql_instance_path }}"
+      InstallSQLDataDir: "{{ mssql_sqlinstalldata_path }}"
+      SQLUserDBDir: "{{ mssql_sqluserdata_path }}"
+      SQLUserDBLogDir: "{{ mssql_sqluserlog_path }}"
+      SQLTempDBDir: "{{ mssql_sqltempDB_path }}"
+      SQLTempDBLogDir: "{{ mssql_sqltempDBlog_path }}"
+      Features: "{{ mssql_features }}"
+      SQLCollation: "{{ mssql_collation }}"
+      BrowserSvcStartupType: "{{ mssql_browsersvc_mode }}"
+      SuppressReboot: "{{ mssql_suppress_reboot }}" 
+      SQLSvcAccount_username: "{{ mssql_sqlsvc_account }}"
+      SQLSvcAccount_password: "{{ mssql_sqlsvc_account_pass }}"
+      AgtSvcAccount_username: "{{ mssql_agentsvc_account }}"
+      AgtSvcAccount_password: "{{ mssql_agentsvc_account_pass }}"
+      ASSvcAccount_username: "{{ mssql_assvc_account }}"
+      ASSvcAccount_password: "{{ mssql_assvc_account_pass }}"
+      SAPwd_username: "sa"
+      SAPwd_password: "{{ mssql_sa_password }}"
+      SQLSysAdminAccounts: "{{ mssql_sysadmin_accounts }}"
+      ASSysAdminAccounts: "{{ mssql_asadmin_accounts }}"
+     tags: install_sql
+# Firewall configuration
+   - name: Firewall | Allow Database Engine for instance
+     win_dsc:
+      resource_name: xFirewall
+      Name: "SQL Server Database Engine instance {{ mssql_instance_name }}"
+      Program: sqlservr.exe 
+      Ensure: present
+      Enabled: True
+      Profile: "Private,Public,Domain"
+      Direction: "Inbound"
+      Action: Allow
+      Description: "Allows the Database Engine to access the network"  
+      LocalPort: 1433
+      Protocol: TCP
+     tags: configure_firewall
+   - name: Firewall | Allow SQLBrowser for instance
+     win_dsc:
+      resource_name: xFirewall
+      Name: "SQL Server Browser instance {{ mssql_instance_name }}"
+      Service: SQLBrowser
+      Ensure: present
+      Enabled: True
+      Profile: "Private,Public,Domain"
+      Direction: "Inbound"
+      Action: Allow
+      Description: "Allows the SQL Server Browser to access the network"  
+     tags: configure_firewall
+# Begin SQL Server configuration
+   - name: Enable TCP Connectivity
+     win_dsc:
+      resource_name: SqlServerNetwork
+      InstanceName: "{{ mssql_instance_name }}"
+      ProtocolName: tcp
+      TcpPort: "{{ mssql_port }}"
+      IsEnabled: True
+      RestartService: True
+     tags: configure_sql
+   - name: Adjust Max Server Memory to {{ mssql_max_server_memory }}
+     when: mssql_max_server_memory is defined
+     win_dsc:
+      resource_name: SqlServerConfiguration 
+      InstanceName: "{{ mssql_instance_name }}"
+      ServerName: "{{ ansible_hostname }}"
+      OptionName: max server memory (MB)
+      OptionValue: "{{ mssql_max_server_memory }}"
+      RestartService: False
+     tags: configure_sql      
+   - name: Adjust Min Server Memory to {{ mssql_min_server_memory }}
+     when: mssql_min_server_memory is defined
+     win_dsc:
+      resource_name: SqlServerConfiguration 
+      ServerName: "{{ ansible_hostname }}"
+      InstanceName: "{{ mssql_instance_name }}"
+      OptionName: min server memory (MB)
+      OptionValue: "{{ mssql_min_server_memory }}"
+     tags: configure_sql
+
+   - name: Adjust Max Degree of Parallelism
+     when: mssql_max_degree_of_parallelism is defined
+     win_dsc:
+      resource_name: SqlServerConfiguration 
+      ServerName: "{{ ansible_hostname }}"
+      InstanceName: "{{ mssql_instance_name }}"
+      OptionName: max degree of parallelism
+      OptionValue: "{{ mssql_max_degree_of_parallelism }}"
+     tags: configure_sql     
+
+   - name: Set sa Password
+     win_shell: |
+      Invoke-Sqlcmd -Query "ALTER LOGIN [sa] WITH PASSWORD=N'{{ mssql_sa_password }}'" -ServerInstance {{ ansible_hostname }}\{{ mssql_instance_name }} | ConvertTo-Json
+
+     register: reset_result
+

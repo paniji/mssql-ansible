@@ -1,0 +1,8 @@
+- name: Windows | Reboot to complete Powershell 5.0 install
+  hosts: windows
+  tasks:
+   - win_reboot:
+    # We will give windows a full hour to reboot.
+       reboot_timeout: 3600
+       post_reboot_delay: 60
+     #when: check_powershell5.changed

@@ -1,0 +1,50 @@
+- name: Install MS SQL
+  hosts: windows
+  tasks: 
+   - name: Powershell | Check for SQLServer DSC Powershell module
+     win_psmodule:
+      name: SQLServerDsc
+      state: present
+   - name: Powershell | Check for Storage DSC Powershell module
+     win_psmodule:
+      name: StorageDsc
+      state: present
+   - name: Powershell | Check for ServerManager Powershell module
+     win_psmodule:
+      name: ServerManager
+      state: present
+   - name: Powershell | Ensure that DBA Tools module is present
+     win_psmodule:
+      name: dbatools
+      state: present
+   - name: Powershell | Check for xNetworking Powershell module
+     win_psmodule:
+      name: xNetworking
+      state: present
+# This package is required to run console applications with the .NET Core runtime.
+   - name: Windows | Install .NET Framework Core
+     win_chocolatey:
+      name: dotnetcore
+   - name: Windows | Install .NET Framework Core
+     win_chocolatey:
+      name: dotnetcore-runtime
+   - name: Windows | Install .NET Framework 3.5
+     win_chocolatey:
+      name: dotnet4.6.1
+   - name: Windows | .Net Framework 3.5
+     win_chocolatey:
+      name: dogtail.dotnet3.5sp1
+   - name: Windows | The Microsoft .NET Framework 4.5.1
+     win_chocolatey:
+      name: dotnet4.5.1
+   - name: Windows | Install Windows Process Activation Service
+     win_shell: Install-WindowsFeature WAS
+   - meta: flush_handlers
+
+   - name: ensure DL dir is present
+     win_file:
+      path: "{{ item }}"
+      state: directory
+     loop:  
+      - "{{ mssql_temp_download_path }}"
+      - "{{ mssql_installation_path }}"
